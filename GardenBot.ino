@@ -1,6 +1,7 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 #include <dht.h>
+#include "TrackingCamDxlUart.h"
 
 #define X_MIN 0
 #define X_MAX 50.5
@@ -49,6 +50,45 @@ dht DHT;
 char msg[8];
 LiquidCrystal_I2C lcd(0x27,20,4);  
 
+TrackingCamDxlUart trackingCam;
+
+void erase_plants(int rows,int columns)
+{
+  trackingCam.init(51, 1, 115200, 30);
+  delay(5000);
+  
+   move_z(Z_MAX/2);
+  for(int i=0;i<columns;i++)
+  {
+    if(pos.x==0)
+      for(int j=0;j<rows;j++)
+      {
+        move_xy(STEP_PIN_X,DIR_PIN_X,X_MAX/rows);
+        uint8_t n = trackingCam.readBlobs(5);
+        if(n>0)
+        {
+          move_z(Z_MAX/2);
+          use_drill();
+          move_z(-Z_MAX/2);
+        }
+      }
+    else
+      for(int j=0;j<rows;j++)
+      {
+        move_xy(STEP_PIN_X,DIR_PIN_X,-X_MAX/rows);
+        move_z(Z_MAX/2);
+        uint8_t n = trackingCam.readBlobs(5);
+        if(n>0)
+        {
+          move_z(Z_MAX/2);
+          use_drill();
+          move_z(-Z_MAX/2);
+        } 
+      }
+    move_xy(STEP_PIN_Y,DIR_PIN_Y,Y_MAX/columns);
+  }
+}
+
 void use_drill() //вращение насадкой (бур, культиватор)
 {
   digitalWrite(DIR_PIN_TOOL,LOW);
@@ -68,7 +108,7 @@ void open_arm() //открыть захват
   {
     digitalWrite(STEP_PIN_TOOL,HIGH); 
     digitalWrite(STEP_PIN_TOOL,LOW); 
-    delay(5);
+    delay(10);
   } 
 }
 
@@ -79,7 +119,7 @@ void close_arm() //закрыть захват
   {
     digitalWrite(STEP_PIN_TOOL,HIGH); 
     digitalWrite(STEP_PIN_TOOL,LOW); 
-    delay(5);
+    delay(10);
   } 
 }
 
@@ -188,8 +228,7 @@ void home_x()//движение в 0 по x
     digitalWrite(STEP_PIN_X,LOW); 
     delayMicroseconds(1000); 
   }while(digitalRead(X_ENDSTOP) != true);
-  pos.x=0;
-  //move_xy(STEP_PIN_X,DIR_PIN_X,-pos.x);
+  pos.x = 0;
 }
 
 void home_y()//движение в 0 по y
@@ -202,8 +241,7 @@ void home_y()//движение в 0 по y
     digitalWrite(STEP_PIN_Y,LOW); 
     delayMicroseconds(1000); 
   }while(digitalRead(Y_ENDSTOP) != true);
-  pos.y=0;
-  //move_xy(STEP_PIN_Y,DIR_PIN_Y,-pos.y);
+  pos.y = 0;
 }
 
 void home_z()//движение в 0 по z
@@ -217,7 +255,6 @@ void home_z()//движение в 0 по z
     delayMicroseconds(1000); 
   }while(digitalRead(Z_ENDSTOP) != true);
   pos.z=0;
-  //move_z(-pos.z);
 }
 
 void move_home()//движение в 0 по всем осям
@@ -305,12 +342,12 @@ void harvest(int rows,int columns)// Движемся змейкой, берем
 
 void water_on()
 {
-  digitalWrite(WATER_PIN,HIGH);
+  digitalWrite(WATER_PIN,125);
 }
 
 void water_off()
 {
-  digitalWrite(WATER_PIN,LOW);
+  digitalWrite(WATER_PIN,125);
 }
 
 void water(int rows,int columns)//движемся змейкой без остаковок с включенным поливом
@@ -412,12 +449,10 @@ void setup()
   lcd.setCursor(1,0);
   
   delay(1000);
-  //move_home();
+  move_home();
   //здесь могут быть ваши команды
-  open_arm();
-  delay(1000);
-  close_arm();
-  //move_home();
+  water(3,5);
+  move_home();
 }
 
 void loop() 
