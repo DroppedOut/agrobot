@@ -1,17 +1,18 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
+#include <TroykaLight.h>
 #include <dht.h>
 #include "TrackingCamDxlUart.h"
 
 #define X_MIN 0
-#define X_MAX 50.5
+#define X_MAX 55.5
 #define Y_MIN 0
-#define Y_MAX 41.0
+#define Y_MAX 32.0
 #define Z_MIN 0
-#define Z_MAX 11
+#define Z_MAX 9.0
 
-#define DROP_POS_X 40 
-#define DROP_POS_Y 32
+#define DROP_POS_X 31.3
+#define DROP_POS_Y 47
 
 #define STEP_ENABLE 8
 #define STEP_PIN_X 2 
@@ -24,15 +25,15 @@
 #define DIR_PIN_TOOL 13
 
 #define X_ENDSTOP 9
-#define Y_ENDSTOP 10
+#define Y_ENDSTOP 15
 #define Z_ENDSTOP 11
 
-#define MOISTURE_PIN A0 
-#define LIGHT_PIN A1
-#define TEMPERATURE_PIN A2
-#define HUMIDITY_PIN A3
-//LCD SDA A4 SCL A5
-#define WATER_PIN A6
+#define HUMIDITY_PIN A15
+#define LIGHT_PIN A14
+#define MOISTURE_PIN A13
+
+#define WATER_PIN A12
+#define LED_PIN A11
 
 struct toolpos
 {
@@ -50,9 +51,11 @@ dht DHT;
 char msg[8];
 LiquidCrystal_I2C lcd(0x27,20,4);  
 
+TroykaLight sensorLight(LIGHT_PIN);
+  
 TrackingCamDxlUart trackingCam;
 
-void erase_plants(int rows,int columns)
+void erase_plants(int rows=5,int columns=3)
 {
   trackingCam.init(51, 1, 115200, 30);
   delay(5000);
@@ -60,7 +63,7 @@ void erase_plants(int rows,int columns)
    move_z(Z_MAX/2);
   for(int i=0;i<columns;i++)
   {
-    if(pos.x==0)
+    if(i%2==0)
       for(int j=0;j<rows;j++)
       {
         move_xy(STEP_PIN_X,DIR_PIN_X,X_MAX/rows);
@@ -151,6 +154,7 @@ void move_z(float distance)//движение по OZ, есть проверка
     digitalWrite(STEP_PIN_Z,LOW); 
     delayMicroseconds(1000); 
   }
+  update_display();
 }
 
 void move_xy(int step_pin,int dir_pin,float distance)//движение по осям ОХ и ОУ, есть проверка расстояния на валидность
@@ -205,6 +209,7 @@ void move_xy(int step_pin,int dir_pin,float distance)//движение по о�
     digitalWrite(step_pin,LOW); 
     delayMicroseconds(1000); 
   }
+  update_display();
 }
 
 void move_xy_coord(float x,float y)//движение к заданной точке с координатами x y
@@ -221,40 +226,42 @@ void move_xy_coord(float x,float y)//движение к заданной точ
 void home_x()//движение в 0 по x
 {
   digitalWrite(DIR_PIN_X,LOW);
-  do
+  while(digitalRead(X_ENDSTOP) != true)
   {
     digitalWrite(STEP_PIN_X,HIGH); 
     delayMicroseconds(1000); 
     digitalWrite(STEP_PIN_X,LOW); 
     delayMicroseconds(1000); 
-  }while(digitalRead(X_ENDSTOP) != true);
+  }
   pos.x = 0;
 }
 
 void home_y()//движение в 0 по y
 {
   digitalWrite(DIR_PIN_Y,LOW);
-  do
+  while(digitalRead(Y_ENDSTOP) != true)
   {
     digitalWrite(STEP_PIN_Y,HIGH); 
     delayMicroseconds(1000); 
     digitalWrite(STEP_PIN_Y,LOW); 
     delayMicroseconds(1000); 
-  }while(digitalRead(Y_ENDSTOP) != true);
+  }
   pos.y = 0;
+  update_display();
 }
 
 void home_z()//движение в 0 по z
 {
   digitalWrite(DIR_PIN_Z,HIGH);
-  do
+  while(digitalRead(Z_ENDSTOP) != true)
   {
     digitalWrite(STEP_PIN_Z,HIGH); 
     delayMicroseconds(1000); 
     digitalWrite(STEP_PIN_Z,LOW); 
     delayMicroseconds(1000); 
-  }while(digitalRead(Z_ENDSTOP) != true);
+  }
   pos.z=0;
+  update_display();
 }
 
 void move_home()//движение в 0 по всем осям
@@ -264,12 +271,12 @@ void move_home()//движение в 0 по всем осям
   home_z();
 }
 
-void dig(int rows,int columns)// движемся змейкой, копаем ямы буром, аргументы функции - количество рядов и строк с ямами
+void dig(int rows=5,int columns=3)// движемся змейкой, копаем ямы буром, аргументы функции - количество рядов и строк с ямами
 {
   move_z(Z_MAX/2);
   for(int i=0;i<columns;i++)
   {
-    if(pos.x==0)
+    if(i%2==0)
     for(int j=0;j<rows;j++)
     {
       move_xy(STEP_PIN_X,DIR_PIN_X,X_MAX/rows);
@@ -290,12 +297,12 @@ void dig(int rows,int columns)// движемся змейкой, копаем �
   move_home();
 }
 
-void harvest(int rows,int columns)// Движемся змейкой, берем урожай захватом, везем его в корзину, сбрасываем, возвращаемся к предыдущей точке, дальше едем змейкой.
+void harvest(int rows=5,int columns=3)// Движемся змейкой, берем урожай захватом, везем его в корзину, сбрасываем, возвращаемся к предыдущей точке, дальше едем змейкой.
 {
   move_z(Z_MAX/2);
   for(int i=0;i<columns;i++)
   {
-    if(pos.x==0)
+    if(i%2==0)
     for(int j=0;j<rows;j++)
     {
       move_xy(STEP_PIN_X,DIR_PIN_X,X_MAX/rows);
@@ -309,12 +316,12 @@ void harvest(int rows,int columns)// Движемся змейкой, берем
       temp_pos.y=pos.y;
       
       move_xy_coord(drop_pos.x,drop_pos.y);
-      move_z(Z_MAX/2);
+      move_z(1);
       open_arm();
       close_arm();
-      move_z(-Z_MAX/2);
+      move_z(-1);
       move_xy_coord(temp_pos.x,temp_pos.y);
-      
+      drop_pos.x+=4;
     }
     else
     for(int j=0;j<rows;j++)
@@ -330,11 +337,12 @@ void harvest(int rows,int columns)// Движемся змейкой, берем
       temp_pos.y=pos.y;
       
       move_xy_coord(drop_pos.x,drop_pos.y);
-      move_z(Z_MAX/2);
+      move_z(1);
       open_arm();
       close_arm();
-      move_z(-Z_MAX/2);
+      move_z(-1);
       move_xy_coord(temp_pos.x,temp_pos.y);
+      drop_pos.x+=4;
     }
     move_xy(STEP_PIN_Y,DIR_PIN_Y,Y_MAX/columns);
   }
@@ -347,15 +355,25 @@ void water_on()
 
 void water_off()
 {
-  digitalWrite(WATER_PIN,125);
+  digitalWrite(WATER_PIN,LOW);
 }
 
-void water(int rows,int columns)//движемся змейкой без остаковок с включенным поливом
+void led_on()
+{
+  digitalWrite(LED_PIN,HIGH);
+}
+
+void led_off()
+{
+  digitalWrite(LED_PIN,LOW);
+}
+
+void water(int rows=5,int columns=3)//движемся змейкой без остаковок с включенным поливом
 {
   move_z(Z_MAX/2);
   for(int i=0;i<columns;i++)
   {
-    if(pos.x==0)
+    if(i%2==0)
       for(int j=0;j<rows;j++)
       {
         move_xy(STEP_PIN_X,DIR_PIN_X,X_MAX/rows);
@@ -390,40 +408,46 @@ float read_sensor(int pin)
   return sensorValue;
 }
 
-void output_display()
+void update_display()
 {
- float sensorValue = read_sensor(MOISTURE_PIN);
- dtostrf(sensorValue, 6, 2, msg);
- lcd.clear();
- lcd.setCursor(0,0);
- lcd.print("Moisture: ");
- lcd.setCursor(9,0);
- lcd.print(msg);
- 
- sensorValue = read_sensor(LIGHT_PIN); 
- sensorValue = 1023-(sensorValue/100.0);
- dtostrf(sensorValue, 6, 2, msg);
- lcd.setCursor(0,1);
- lcd.print("Light: ");
- lcd.setCursor(9,1);
- lcd.print(msg);
+   static float old_value_temp=20, old_value_hum=5;
+   float sensorValue = read_sensor(MOISTURE_PIN);
+   dtostrf(sensorValue, 6, 2, msg);
+   lcd.clear();
+   lcd.setCursor(0,0);
+   lcd.print("Moisture: ");
+   lcd.setCursor(9,0);
+   lcd.print(msg);
+   
+   sensorLight.read();
+   dtostrf(sensorLight.getLightLux(), 6, 2, msg);
+   lcd.setCursor(0,1);
+   lcd.print("Light: ");
+   lcd.setCursor(9,1);
+   lcd.print(msg);
 
- sensorValue = read_sensor(TEMPERATURE_PIN); 
- sensorValue *= 5.0;
- sensorValue /=1024;
- sensorValue = (sensorValue - 0.5) * 100;
- dtostrf(sensorValue, 6, 2, msg);
- lcd.setCursor(0,2);
- lcd.print("Temperature: ");
- lcd.setCursor(13,2);
- lcd.print(msg);
-
- sensorValue =  DHT.read11(HUMIDITY_PIN);
- dtostrf(DHT.humidity, 6, 2, msg);
- lcd.setCursor(0,3);
- lcd.print("Humidity: ");
- lcd.setCursor(13,3);
- lcd.print(msg);
+   DHT.read11(HUMIDITY_PIN);
+   sensorValue = DHT.temperature;
+   if(sensorValue<-100)
+    sensorValue=old_value_temp;
+   else
+    old_value_temp=sensorValue;
+   dtostrf(sensorValue, 6, 2, msg);
+   lcd.setCursor(0,2);
+   lcd.print("Temperature: ");
+   lcd.setCursor(13,2);
+   lcd.print(msg);
+   
+   sensorValue =  DHT.humidity;
+   if(sensorValue<-100)
+    sensorValue=old_value_hum;
+   else
+    old_value_hum=sensorValue;
+   dtostrf(sensorValue, 6, 2, msg);
+   lcd.setCursor(0,3);
+   lcd.print("Humidity: ");
+   lcd.setCursor(13,3);
+   lcd.print(msg);
 }
 
 void setup() 
@@ -433,6 +457,7 @@ void setup()
 
   pinMode(STEP_ENABLE,OUTPUT);
   pinMode(WATER_PIN,OUTPUT);
+  pinMode(LED_PIN,OUTPUT);
   pinMode(STEP_PIN_X,OUTPUT); 
   pinMode(DIR_PIN_X,OUTPUT);
   pinMode(STEP_PIN_Y,OUTPUT); 
@@ -441,22 +466,27 @@ void setup()
   pinMode(DIR_PIN_Z,OUTPUT);
   pinMode(STEP_PIN_TOOL,OUTPUT); 
   pinMode(DIR_PIN_TOOL,OUTPUT);
-    
+
+  pinMode(X_ENDSTOP,INPUT); 
+  pinMode(Y_ENDSTOP,INPUT); 
+  pinMode(Z_ENDSTOP,INPUT); 
+  water_off();
+  led_on();
+     
   digitalWrite(STEP_ENABLE,LOW);
-  
+  Serial.begin(9600);
   lcd.init();                  
   lcd.backlight();
   lcd.setCursor(1,0);
-  
+  update_display();
   delay(1000);
   move_home();
   //здесь могут быть ваши команды
-  water(3,5);
   move_home();
 }
 
 void loop() 
 {
-
-
+update_display();
+delay(3000);
 }
